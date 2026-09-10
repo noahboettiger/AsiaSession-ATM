@@ -128,6 +128,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				MaxEntryDistanceFromLevel	= 0;			// 0 disables the proximity rule
 				FlattenBeforeNextSession	= false;
 				MaxContracts				= 0;			// 0 means no cap
+				PointValueOverride			= 0;			// 0 uses the instrument's own
 
 				Use30Second					= true;
 				Use1Minute					= true;
@@ -628,7 +629,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return false;
 			}
 
-			double pointValue	= Instrument.MasterInstrument.PointValue;
+			double pointValue	= PointValueOverride > 0
+				? PointValueOverride
+				: Instrument.MasterInstrument.PointValue;
 			int quantity		= (int)Math.Floor(RiskDollars / (risk * pointValue));
 			if (MaxContracts > 0)
 				quantity = Math.Min(quantity, MaxContracts);
@@ -814,6 +817,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, int.MaxValue)]
 		[Display(Name = "Max contracts (0 = no cap)", Order = 2, GroupName = "1. Risk")]
 		public int MaxContracts { get; set; }
+
+		// MNQ only has history back to May 2019. Backtesting on NQ, which runs to
+		// 1999 with the same prices at ten times the multiplier, needs sizing to
+		// use MNQ's $2 point value rather than NQ's $20.
+		[NinjaScriptProperty]
+		[Range(0, double.MaxValue)]
+		[Display(Name = "Point value override (0 = instrument)", Order = 4, GroupName = "1. Risk")]
+		public double PointValueOverride { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, double.MaxValue)]
