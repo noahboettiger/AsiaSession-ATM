@@ -275,6 +275,15 @@ class StrategyEngine:
             self._finish(s, "min_rr")
             return None
 
+        # A sweep that keeps running is a breakdown, not a stop hunt. If price
+        # never came back toward the level, the reversal premise is gone.
+        if self.cfg.max_entry_distance:
+            level = s.range_low if s.direction == LONG else s.range_high
+            beyond = level - entry if s.direction == LONG else entry - level
+            if beyond > (s.range_high - s.range_low) * self.cfg.max_entry_distance:
+                self._finish(s, "entry_too_far")
+                return None
+
         if self.block_entries:
             self._finish(s, "position_open")
             return None

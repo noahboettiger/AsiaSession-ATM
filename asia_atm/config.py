@@ -36,6 +36,8 @@ class StrategyConfig:
 
     min_rr: float | None = None
     max_bars_to_invert: int = 0  # 0 disables the freshness requirement
+    max_entry_distance: float = 0.0  # as a fraction of range height, 0 disables
+    flatten_before_next_session: bool = False
     enabled_weekdays: frozenset[int] = DEFAULT_WEEKDAYS
 
     apply_slippage: bool = False

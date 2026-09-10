@@ -125,6 +125,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				EntryMode					= AsiaIfvgEntryMode.WaitForHighestTimeframe;
 				MinimumRewardRisk			= 0;			// 0 disables the filter
 				MaxBarsToInvert				= 0;			// 0 disables the freshness rule
+				MaxEntryDistanceFromLevel	= 0;			// 0 disables the proximity rule
+				FlattenBeforeNextSession	= false;
 				MaxContracts				= 0;			// 0 means no cap
 
 				Use30Second					= true;
@@ -271,6 +273,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (closeTime.Date != sessionDate)
 			{
 				FinalizeSession();
+				FlattenStalePosition();
 				StartSession(closeTime.Date);
 			}
 
@@ -427,6 +430,25 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			if (sessionDate != DateTime.MinValue)
 				ExpireSession();
+		}
+
+		/// <summary>
+		/// Close a position still open when the next session begins. Without this a
+		/// trade can sit for days waiting on its target, carrying risk through
+		/// sessions that were never analysed and blocking every setup in between.
+		/// </summary>
+		private void FlattenStalePosition()
+		{
+			if (!FlattenBeforeNextSession || Position.MarketPosition == MarketPosition.Flat)
+				return;
+
+			LogLine(string.Format("flattening a position still open at the next session, {0} @ {1}",
+				Position.Quantity, Format(Position.AveragePrice)));
+
+			if (Position.MarketPosition == MarketPosition.Long)
+				ExitLong(0, Position.Quantity, "AsiaFlat", SignalName);
+			else
+				ExitShort(0, Position.Quantity, "AsiaFlat", SignalName);
 		}
 
 		#endregion
@@ -623,6 +645,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return false;
 			}
 
+			// A sweep that keeps running is a breakdown, not a stop hunt. If price
+			// never came back toward the level, the reversal premise is gone.
+			if (MaxEntryDistanceFromLevel > 0)
+			{
+				double level		= direction == 1 ? rangeLow : rangeHigh;
+				double beyondLevel	= direction == 1 ? level - entry : entry - level;
+				double allowance	= (rangeHigh - rangeLow) * MaxEntryDistanceFromLevel;
+				if (beyondLevel > allowance)
+				{
+					LogLine(string.Format(
+						"rejected, entry {0} sits {1} beyond the level, allowance is {2}",
+						Format(entry), Format(beyondLevel), Format(allowance)));
+					FinishSession("entry_too_far");
+					return false;
+				}
+			}
+
 			if (Position.MarketPosition != MarketPosition.Flat)
 			{
 				FinishSession("position_open");
@@ -785,6 +824,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, int.MaxValue)]
 		[Display(Name = "Max candles to invert (0 = off)", Order = 7, GroupName = "2. Entry")]
 		public int MaxBarsToInvert { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, double.MaxValue)]
+		[Display(Name = "Max entry distance past level, x range (0 = off)", Order = 8,
+			GroupName = "2. Entry")]
+		public double MaxEntryDistanceFromLevel { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Flatten before next session", Order = 4, GroupName = "3. Session")]
+		public bool FlattenBeforeNextSession { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Entry model", Order = 1, GroupName = "2. Entry")]

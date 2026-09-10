@@ -131,6 +131,16 @@ bars from the first sweep of the traded level through the entry bar inclusive.
 
 No buffer or padding is added.
 
+## 8b. Entry proximity
+
+A liquidity sweep pokes through a level and rejects. When price instead sweeps
+and keeps running, the reversal premise is gone, and a gap left far below the
+level that eventually inverts is not this setup.
+
+If `max_entry_distance` is set, the entry must sit within that fraction of the
+range height beyond the swept level. An entry a few points past the level is
+normal and stays valid; one most of a range width past it is rejected.
+
 ## 9. Take profit
 
 The opposite level, exactly. Long targets `range_high`, short targets
@@ -150,7 +160,13 @@ exceeds `risk_dollars`, the trade is skipped.
 
 ## 11. Exits
 
-No time-based exit. The position runs until the stop or the target is hit.
+No time-based exit inside the session. The position runs until the stop or the
+target is hit.
+
+If `flatten_before_next_session` is set, any position still open when the next
+session's range window begins is closed at market. Without it a trade can sit
+for days waiting on its target, carrying risk through sessions that were never
+analysed and blocking every setup in between.
 
 ## 12. Optional filters and toggles
 
@@ -161,6 +177,8 @@ No time-based exit. The position runs until the stop or the target is hit.
 | `timeframes` | 1, 2, 3, 5 | Monitored FVG timeframes |
 | `min_rr` | off | Optional minimum reward:risk, skip trade if below |
 | `max_bars_to_invert` | off | Candles allowed between a gap forming and inverting |
+| `max_entry_distance` | off | How far past the level an entry may sit, x range height |
+| `flatten_before_next_session` | off | Close a position still open at the next session |
 | `enabled_weekdays` | Sun-Thu | Per-weekday on/off, keyed to the 6 PM session date |
 | `apply_slippage` | off | Ticks of adverse fill on entries and stops |
 | `slippage_ticks` | 1.0 | Used when slippage is on |
@@ -183,8 +201,9 @@ Slippage and commissions affect reported P&L only, not position sizing.
 Every session that produces no trade is recorded with a reason, so the backtest
 reports how often each stage of the setup fails:
 
-`weekday_disabled`, `no_range`, `no_sweep`, `sweep_no_fvg`, `no_inversion`,
-`both_levels_swept`, `size_zero`, `min_rr`, `position_open`
+`weekday_disabled`, `no_range`, `no_window_data`, `no_sweep`, `sweep_no_fvg`,
+`no_inversion`, `both_levels_swept`, `size_zero`, `min_rr`, `entry_too_far`,
+`position_open`
 
 ## Reference trades
 

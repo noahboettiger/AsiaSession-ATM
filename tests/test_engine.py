@@ -173,6 +173,37 @@ class NoTradeTests(unittest.TestCase):
         self.assertEqual(signals[0].timeframe, 3)
         self.assertAlmostEqual(signals[0].entry_price, 29427.50)
 
+    def test_entry_far_below_the_level_is_rejected(self):
+        # The 8/30 shape: price sweeps the low and keeps falling for an hour
+        # instead of rejecting, then bounces. Gaps form all the way down and one
+        # of them inverts far below the level, long after the premise is gone.
+        bars = fx.range_window(29543, 29428) + fx.sequence([
+            ("19:00", 29440, 29442, 29436, 29438),
+            ("19:01", 29438, 29440, 29425, 29428),   # sweep
+            ("19:02", 29428, 29430, 29400, 29405),
+            ("19:03", 29405, 29407, 29360, 29365),
+            ("19:04", 29365, 29367, 29330, 29335),
+            ("19:05", 29335, 29337, 29320, 29322),
+            ("19:06", 29322, 29345, 29320, 29342),
+            ("19:07", 29342, 29365, 29340, 29363),   # closes above a low gap
+        ])
+        # Allowing a quarter of the range beyond the level rejects it.
+        engine, signals = collect(bars, StrategyConfig(
+            max_entry_distance=0.25, entry_mode=FIRST_CONFIRMATION))
+        self.assertEqual(signals, [])
+        self.assertEqual(skip_reasons(engine), ["entry_too_far"])
+
+    def test_entry_just_past_the_level_is_allowed(self):
+        # The 9/8 shape: the confirming close sits a few points below the swept
+        # level, which is a fraction of the range and entirely valid.
+        cfg = StrategyConfig(max_entry_distance=0.25)
+        _, signals = collect(fx.reference_1m_session(), cfg)
+        self.assertEqual(len(signals), 1)
+        self.assertAlmostEqual(signals[0].entry_price, 29500.00)
+
+    def test_proximity_rule_is_off_by_default(self):
+        self.assertEqual(StrategyConfig().max_entry_distance, 0.0)
+
     def test_freshness_limit_is_off_by_default(self):
         self.assertEqual(StrategyConfig().max_bars_to_invert, 0)
 
