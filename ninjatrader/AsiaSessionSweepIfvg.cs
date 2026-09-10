@@ -124,6 +124,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				RiskDollars					= 250;
 				EntryMode					= AsiaIfvgEntryMode.WaitForHighestTimeframe;
 				MinimumRewardRisk			= 0;			// 0 disables the filter
+				MaxBarsToInvert				= 0;			// 0 disables the freshness rule
 				MaxContracts				= 0;			// 0 means no cap
 
 				Use30Second					= true;
@@ -502,17 +503,33 @@ namespace NinjaTrader.NinjaScript.Strategies
 		#region Evaluation
 
 		/// <summary>
-		/// A gap belongs to the sweep only if it formed at or after it. A gap left
-		/// higher up during the earlier decline is not the setup, and waiting for
-		/// price to close through it enters far above the sweep, long after the
-		/// move, at a fraction of the intended size.
+		/// A gap must belong to the sweep, and still be fresh enough to act on.
+		///
+		/// Belonging means it formed at or after the sweep. A gap left higher up
+		/// during the earlier decline is not the setup, and waiting for price to
+		/// close through it enters far from the sweep, long after the move.
+		///
+		/// Freshness means price closed through it within MaxBarsToInvert candles
+		/// of that gap's own timeframe. An immediate reaction is the signal. It
+		/// also lets wide higher timeframe gaps age out on their own rather than
+		/// holding the entry hostage.
 		/// </summary>
-		private bool Qualifies(Gap gap)
+		private bool Qualifies(Gap gap, int seconds, DateTime now)
 		{
 			if (gap == null || gap.Spent || direction == 0)
 				return false;
+
 			DateTime sweptAt = direction == 1 ? lowSweptAt : highSweptAt;
-			return sweptAt != DateTime.MinValue && gap.FormedAt >= sweptAt;
+			if (sweptAt == DateTime.MinValue || gap.FormedAt < sweptAt)
+				return false;
+
+			if (MaxBarsToInvert > 0)
+			{
+				double age = (now - gap.FormedAt).TotalSeconds / seconds;
+				if (age > MaxBarsToInvert)
+					return false;
+			}
+			return true;
 		}
 
 		private void Evaluate(DateTime closeTime)
@@ -532,7 +549,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				int highestLive = 0;
 				foreach (Slot slot in slots)
 				{
-					if (Qualifies(slot.Directional(wantBearish)) && slot.Seconds > highestLive)
+					if (Qualifies(slot.Directional(wantBearish), slot.Seconds, closeTime)
+						&& slot.Seconds > highestLive)
 						highestLive = slot.Seconds;
 				}
 
@@ -553,7 +571,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			bool entered = false;
 			foreach (Inversion inversion in pendingInversions)
 			{
-				bool belongedToSweep = Qualifies(inversion.Gap);
+				bool belongedToSweep = Qualifies(inversion.Gap, inversion.Slot.Seconds, closeTime);
 				// An inversion consumes the gap whether or not it is traded.
 				inversion.Gap.Spent = true;
 
@@ -762,6 +780,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, double.MaxValue)]
 		[Display(Name = "Minimum reward:risk (0 = off)", Order = 3, GroupName = "1. Risk")]
 		public double MinimumRewardRisk { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, int.MaxValue)]
+		[Display(Name = "Max candles to invert (0 = off)", Order = 7, GroupName = "2. Entry")]
+		public int MaxBarsToInvert { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Entry model", Order = 1, GroupName = "2. Entry")]

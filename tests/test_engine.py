@@ -157,6 +157,25 @@ class NoTradeTests(unittest.TestCase):
         self.assertEqual(signals, [])
         self.assertEqual(skip_reasons(engine), ["min_rr"])
 
+    def test_freshness_limit_rejects_a_gap_that_took_too_long_to_invert(self):
+        # The reference 3m gap forms at 7:15 PM and inverts at 7:21 PM, two 3m
+        # candles later. Demanding a reaction on the very next candle kills it.
+        cfg = StrategyConfig(max_bars_to_invert=1)
+        engine, signals = collect(fx.reference_3m_session(), cfg)
+        self.assertEqual(signals, [])
+        # With no entry taken, the rally then runs on into the opposite level.
+        self.assertEqual(skip_reasons(engine), ["both_levels_swept"])
+
+    def test_freshness_limit_allows_a_prompt_inversion(self):
+        cfg = StrategyConfig(max_bars_to_invert=2)
+        _, signals = collect(fx.reference_3m_session(), cfg)
+        self.assertEqual(len(signals), 1)
+        self.assertEqual(signals[0].timeframe, 3)
+        self.assertAlmostEqual(signals[0].entry_price, 29427.50)
+
+    def test_freshness_limit_is_off_by_default(self):
+        self.assertEqual(StrategyConfig().max_bars_to_invert, 0)
+
     def test_min_rr_filter_allows_a_qualifying_target(self):
         cfg = StrategyConfig(min_rr=3.0)
         _, signals = collect(fx.reference_3m_session(), cfg)

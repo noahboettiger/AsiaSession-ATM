@@ -114,7 +114,7 @@ class StrategyEngine:
         for tf, htf in completed.items():
             self._register_fvg(s, tf, htf)
 
-        return self._evaluate(s, completed)
+        return self._evaluate(s, completed, bar.close_ts)
 
     # ----------------------------------------------------------------- session
 
@@ -195,20 +195,28 @@ class StrategyEngine:
         if gap is not None:
             s.fvgs[(tf, gap.direction)] = gap
 
-    def _qualifies(self, s: _Session, gap: FVG | None) -> bool:
-        """A gap belongs to the sweep only if it formed at or after it."""
+    def _qualifies(self, s: _Session, gap: FVG | None, now: datetime) -> bool:
+        """A gap must belong to the sweep, and still be fresh enough to act on."""
         if gap is None or gap.spent:
             return False
         swept_at = s.low_swept_ts if s.direction == LONG else s.high_swept_ts
-        return swept_at is not None and gap.formed_at >= swept_at
+        if swept_at is None or gap.formed_at < swept_at:
+            return False
+        if self.cfg.max_bars_to_invert:
+            age = (now - gap.formed_at).total_seconds() / (gap.timeframe * 60)
+            if age > self.cfg.max_bars_to_invert:
+                return False
+        return True
 
-    def _evaluate(self, s: _Session, completed: dict[int, Bar]) -> EntrySignal | None:
+    def _evaluate(
+        self, s: _Session, completed: dict[int, Bar], now: datetime
+    ) -> EntrySignal | None:
         wanted = DIRECTION_FVG[s.direction] if s.direction else None
 
         live = [
             tf
             for tf in self.cfg.timeframes
-            if self._qualifies(s, s.fvgs.get((tf, wanted)))
+            if self._qualifies(s, s.fvgs.get((tf, wanted)), now)
         ] if wanted else []
         if live:
             s.saw_qualifying_fvg = True
@@ -224,7 +232,7 @@ class StrategyEngine:
                 gap = s.fvgs.get((tf, direction))
                 if gap is None or not gap.inverted_by(htf):
                     continue
-                belonged_to_sweep = self._qualifies(s, gap)
+                belonged_to_sweep = self._qualifies(s, gap, now)
                 # An inversion consumes the gap whether or not we trade it.
                 gap.spent = True
                 if direction != wanted or signal is not None or s.done:

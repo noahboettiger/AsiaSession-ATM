@@ -78,6 +78,12 @@ An FVG qualifies when:
    enters late at a fraction of the intended size and reward.
 2. Its direction matches the sweep direction per section 4.
 3. It has not already been closed through.
+4. It is still fresh, if `max_bars_to_invert` is set. The confirming close must
+   land within that many candles of the gap's own timeframe after it formed.
+   An immediate reaction is the signal: the sweep happens, the gap forms in that
+   sweep, and the next candle or two close beyond it, showing the real move is
+   the other way. This also lets a wide higher timeframe gap age out on its own
+   instead of holding the entry hostage while price runs away.
 
 The FVG does not have to be created by the sweeping candle itself. This sequence
 is explicitly valid: the level is swept, an FVG forms, price trades back up into
@@ -154,6 +160,7 @@ No time-based exit. The position runs until the stop or the target is hit.
 | `entry_mode` | `wait_highest_tf` | Or `first_confirmation` |
 | `timeframes` | 1, 2, 3, 5 | Monitored FVG timeframes |
 | `min_rr` | off | Optional minimum reward:risk, skip trade if below |
+| `max_bars_to_invert` | off | Candles allowed between a gap forming and inverting |
 | `enabled_weekdays` | Sun-Thu | Per-weekday on/off, keyed to the 6 PM session date |
 | `apply_slippage` | off | Ticks of adverse fill on entries and stops |
 | `slippage_ticks` | 1.0 | Used when slippage is on |

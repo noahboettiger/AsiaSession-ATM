@@ -35,6 +35,7 @@ class StrategyConfig:
     max_contracts: int | None = None
 
     min_rr: float | None = None
+    max_bars_to_invert: int = 0  # 0 disables the freshness requirement
     enabled_weekdays: frozenset[int] = DEFAULT_WEEKDAYS
 
     apply_slippage: bool = False
