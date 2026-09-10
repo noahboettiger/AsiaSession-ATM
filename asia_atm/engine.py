@@ -195,13 +195,20 @@ class StrategyEngine:
         if gap is not None:
             s.fvgs[(tf, gap.direction)] = gap
 
+    def _qualifies(self, s: _Session, gap: FVG | None) -> bool:
+        """A gap belongs to the sweep only if it formed at or after it."""
+        if gap is None or gap.spent:
+            return False
+        swept_at = s.low_swept_ts if s.direction == LONG else s.high_swept_ts
+        return swept_at is not None and gap.formed_at >= swept_at
+
     def _evaluate(self, s: _Session, completed: dict[int, Bar]) -> EntrySignal | None:
         wanted = DIRECTION_FVG[s.direction] if s.direction else None
 
         live = [
             tf
             for tf in self.cfg.timeframes
-            if (g := s.fvgs.get((tf, wanted))) is not None and not g.spent
+            if self._qualifies(s, s.fvgs.get((tf, wanted)))
         ] if wanted else []
         if live:
             s.saw_qualifying_fvg = True
@@ -217,9 +224,12 @@ class StrategyEngine:
                 gap = s.fvgs.get((tf, direction))
                 if gap is None or not gap.inverted_by(htf):
                     continue
+                belonged_to_sweep = self._qualifies(s, gap)
                 # An inversion consumes the gap whether or not we trade it.
                 gap.spent = True
                 if direction != wanted or signal is not None or s.done:
+                    continue
+                if not belonged_to_sweep:
                     continue
                 if required_tf is not None and tf != required_tf:
                     continue

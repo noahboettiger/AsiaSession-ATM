@@ -109,6 +109,25 @@ class NoTradeTests(unittest.TestCase):
         self.assertEqual(signals, [])
         self.assertEqual(skip_reasons(engine), ["sweep_no_fvg"])
 
+    def test_gap_formed_before_the_sweep_cannot_trigger(self):
+        # The decline into the level leaves a gap high above it. Price sweeps,
+        # reverses, and rallies back through that stale gap. Treating it as the
+        # setup would enter far above the sweep, long after the move.
+        bars = fx.range_window(29623.25, 29540.25) + fx.sequence([
+            ("19:00", 29600, 29602, 29596, 29598),
+            ("19:01", 29598, 29599, 29590, 29592),
+            ("19:02", 29588, 29589, 29585, 29586),   # stale gap 29589 to 29596
+            ("19:03", 29586, 29592, 29583, 29584),
+            ("19:04", 29584, 29590, 29580, 29582),
+            ("19:05", 29582, 29588, 29535, 29538),   # sweep, no new gap
+            ("19:06", 29538, 29590, 29536, 29588),
+            ("19:07", 29588, 29600, 29586, 29598),   # closes above the stale gap
+            ("19:08", 29598, 29604, 29596, 29602),
+        ])
+        engine, signals = collect(bars)
+        self.assertEqual(signals, [])
+        self.assertEqual(skip_reasons(engine), ["sweep_no_fvg"])
+
     def test_session_without_a_sweep_reports_no_sweep(self):
         bars = fx.range_window(29474.50, 29422.75) + fx.drift("19:00", 60, 29440, 0.1)
         engine, signals = collect(bars)

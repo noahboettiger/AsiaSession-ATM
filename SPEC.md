@@ -71,15 +71,18 @@ A three candle pattern `c1, c2, c3` on a given timeframe forms an FVG when:
 
 An FVG qualifies when:
 
-1. It completes at or after 7:00 PM (only bars from 7:00 PM onward feed the
-   timeframe aggregators).
+1. **It completes at or after the first sweep of the level.** The gap has to
+   belong to the sweep, not merely occur on the same evening. A gap left higher
+   up during the earlier decline is not the setup, and treating it as one makes
+   the strategy wait for price to close above a level far from the sweep, which
+   enters late at a fraction of the intended size and reward.
 2. Its direction matches the sweep direction per section 4.
 3. It has not already been closed through.
 
 The FVG does not have to be created by the sweeping candle itself. This sequence
-is explicitly valid: FVG forms, price trades back up into it, price re-sweeps the
-level, then price closes through the FVG. The only hard requirement is that the
-confirming close lands after at least one sweep has occurred.
+is explicitly valid: the level is swept, an FVG forms, price trades back up into
+it, price re-sweeps the level, then price closes through the FVG. What the gap
+cannot do is predate the first sweep entirely.
 
 Only the **most recently formed** qualifying FVG per timeframe and direction is
 tracked. A newer FVG replaces the older one.
