@@ -45,7 +45,10 @@ Easiest option, do this once:
 2. Set **Time zone** to `(UTC-05:00) Eastern Time (US & Canada)`.
 3. Restart NinjaTrader.
 
-Now `1800` means 6:00 PM New York, and daylight saving is handled for you.
+Now `1800` means 6:00 PM New York, and daylight saving is handled for you. The
+`(UTC-05:00)` in that label is only Eastern's standard-time offset. Windows
+shifts the zone to UTC-4 automatically during daylight saving, so do not pick
+`(UTC-06:00) Central` in the summer thinking it compensates.
 
 If you would rather leave NinjaTrader on Central time, change the three inputs to
 `1700`, `1800` and `1930` instead. New York and Chicago shift for daylight saving

@@ -16,6 +16,8 @@ using System.IO;
 using System.Windows.Media;
 using NinjaTrader.Cbi;
 using NinjaTrader.Data;
+using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.DrawingTools;
@@ -660,7 +662,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Draw.Line(this, "asiaTarget" + stamp, false, closeTime, target, finish, target,
 				Brushes.SeaGreen, DashStyleHelper.Solid, 2);
 			Draw.Text(this, "asiaLabel" + stamp, false, inversion.Slot.Label + " IFVG", closeTime, entry, 12,
-				Brushes.White, new Gui.Tools.SimpleFont("Arial", 11), System.Windows.TextAlignment.Left,
+				Brushes.White, new SimpleFont("Arial", 11), System.Windows.TextAlignment.Left,
 				Brushes.Transparent, Brushes.Transparent, 0);
 		}
 
