@@ -87,6 +87,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool		rangeValid;
 		private bool		sessionDone;
 		private bool		sawQualifyingGap;
+		private bool		rangeAnnounced;
 
 		private int			direction;					// 1 long, -1 short, 0 undecided
 		private DateTime	lowSweptAt		= DateTime.MinValue;
@@ -164,8 +165,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.DataLoaded)
 			{
-				if (slots.Count == 0)
-					Log("No timeframes enabled, the strategy will never trade.", LogLevel.Warning);
+				ResolveSeriesIndexes();
 			}
 		}
 
@@ -176,8 +176,62 @@ namespace NinjaTrader.NinjaScript.Strategies
 			else
 				AddDataSeries(BarsPeriodType.Second, seconds);
 
-			// Added series are indexed from 1, in the order they were added.
-			slots.Add(new Slot { Seconds = seconds, Label = label, Bip = slots.Count + 1 });
+			// The real index is resolved in State.DataLoaded by inspecting each
+			// loaded series, because NinjaTrader may reuse the primary series when
+			// an added one matches it rather than creating a duplicate.
+			slots.Add(new Slot { Seconds = seconds, Label = label, Bip = -1 });
+		}
+
+		/// <summary>
+		/// Match every timeframe to the series that actually got loaded, rather than
+		/// assuming series are indexed in the order they were added.
+		/// </summary>
+		private void ResolveSeriesIndexes()
+		{
+			if (slots == null || slots.Count == 0)
+			{
+				Print("AsiaSessionSweepIfvg: no timeframes enabled, this will never trade.");
+				return;
+			}
+
+			foreach (Slot slot in slots)
+			{
+				slot.Bip = -1;
+				for (int i = 0; i < BarsArray.Length; i++)
+				{
+					if (BarsArray[i] == null)
+						continue;
+					if (SecondsOf(BarsArray[i].BarsPeriod) == slot.Seconds)
+					{
+						slot.Bip = i;
+						break;
+					}
+				}
+			}
+
+			// Two timeframes must never share a series, or their gaps would collide.
+			for (int a = 0; a < slots.Count; a++)
+				for (int b = a + 1; b < slots.Count; b++)
+					if (slots[a].Bip >= 0 && slots[a].Bip == slots[b].Bip)
+						slots[b].Bip = -1;
+
+			Print("");
+			Print("AsiaSessionSweepIfvg loaded. Series mapping:");
+			foreach (Slot slot in slots)
+				Print(string.Format("    {0,-4} -> {1}", slot.Label,
+					slot.Bip < 0 ? "NOT LOADED, this timeframe is inactive" : "series " + slot.Bip));
+			Print(string.Format("    session window {0} to {1}, last entry {2}, chart time",
+				RangeStartTime, RangeEndTime, TradeEndTime));
+			Print("");
+		}
+
+		private static int SecondsOf(BarsPeriod period)
+		{
+			if (period.BarsPeriodType == BarsPeriodType.Minute)
+				return period.Value * 60;
+			if (period.BarsPeriodType == BarsPeriodType.Second)
+				return period.Value;
+			return 0;
 		}
 
 		private static int ToSeconds(int hhmm)
@@ -191,9 +245,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		protected override void OnBarUpdate()
 		{
-			if (BarsInProgress == 0 || slots == null)
+			if (slots == null)
 				return;
 
+			// The primary series is used when it matches one of our timeframes,
+			// and ignored otherwise. SlotFor decides.
 			Slot slot = SlotFor(BarsInProgress);
 			if (slot == null || CurrentBars[BarsInProgress] < 3)
 				return;
@@ -240,6 +296,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
+			if (!rangeAnnounced)
+			{
+				rangeAnnounced = true;
+				LogLine(string.Format("range locked, {0} high / {1} low",
+					Format(rangeHigh), Format(rangeLow)));
+			}
+
 			DrawLevels(closeTime);
 			UpdateSweeps(BarsInProgress, closeTime);
 			if (sessionDone)
@@ -266,7 +329,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private Slot SlotFor(int bip)
 		{
 			foreach (Slot slot in slots)
-				if (slot.Bip == bip)
+				if (slot.Bip == bip && bip >= 0)
 					return slot;
 			return null;
 		}
@@ -277,7 +340,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			int secondsIntoHour = closeTime.Minute * 60 + closeTime.Second;
 			int count = 0;
 			foreach (Slot slot in slots)
-				if (secondsIntoHour % slot.Seconds == 0)
+				if (slot.Bip >= 0 && secondsIntoHour % slot.Seconds == 0)
 					count++;
 			return Math.Max(count, 1);
 		}
@@ -308,6 +371,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			rangeValid			= false;
 			sessionDone			= false;
 			sawQualifyingGap	= false;
+			rangeAnnounced		= false;
 			direction			= 0;
 			lowSweptAt			= DateTime.MinValue;
 			highSweptAt			= DateTime.MinValue;
