@@ -57,12 +57,21 @@ two approaches.
 
 ## 4. Download the data
 
-1. **Tools > Historical Data Manager**.
-2. **Load** tab.
-3. Instrument: `MNQ ##-##` (the continuous contract, not a single expiry).
-4. Type: **Tick**. This matters. The 30-second timeframe cannot be built from
-   minute data, so without tick history the 30s rung is silently unavailable.
-5. Set your date range and click **Load**.
+Connect to your data feed first. The download silently does nothing while
+disconnected.
+
+1. **Tools > Historical Data**.
+2. Expand the **Download** section.
+3. Instrument: type `MNQ ##-##` (the continuous contract, not a single expiry).
+   It will not appear in the dropdown, which only lists instruments already in
+   your database. Typing it is correct.
+4. Intervals: **Minute**. Data Type: **Last**.
+5. Set Start Date to the older date and End Date to the newer one, then click
+   **Download**.
+
+Add **Tick** later, once the logic is verified. The 30-second timeframe cannot be
+built from minute data, so until you have tick history the 30s rung is
+unavailable and **Use 30 second** should stay off.
 
 Tick data for several years of MNQ is a large download and will take a while.
 Start with three to six months to prove the strategy works, then extend.
@@ -71,10 +80,12 @@ If you want to skip tick data for the first pass, turn **Use 30 second** off in
 the strategy inputs and load **Minute** data instead. Everything from 1m up will
 work. Add the 30s rung once you have tick history.
 
-For the continuous contract, set **Merge Policy** to **Merge Non-Back Adjusted**
-so prices match what actually traded on each date. The strategy computes all its
-levels inside a single session, so roll adjustments do not affect the logic, but
-non-back-adjusted makes manual chart verification much easier.
+**Merge Policy** is not set here. It lives on the data series, so you set it in
+the Strategy Analyzer (and in the chart's Data Series dialog) in the next step.
+Use **Merge Non-Back Adjusted** so prices match what actually traded on each
+date. The strategy computes all its levels inside a single session, so roll
+adjustments do not change the logic, but non-back-adjusted makes manual chart
+verification much easier.
 
 ## 5. Run a backtest
 
@@ -84,6 +95,7 @@ non-back-adjusted makes manual chart verification much easier.
    - **Strategy**: `AsiaSessionSweepIfvg`
    - **Start date / End date**: your test range
    - **Bars type**: `Minute`, **Value**: `1`
+   - **Merge policy**: `Merge Non-Back Adjusted`
    - **Order fill resolution**: `High`
    - **Fill resolution type**: `Tick`, **Value**: `1`
    - **Slippage**: start at `0`, then rerun at `1` to see the cost
