@@ -57,9 +57,12 @@ take profit target left, so no trade.
 
 ## 5. Fair value gap qualification
 
-Timeframes monitored: 1m, 2m, 3m, 5m, all built internally from 1-minute bars
-and aligned to the hour (the 6 PM session start is on an exact hour, so hour
-alignment matches TradingView's session alignment for these four intervals).
+Timeframes monitored: 30s, 1m, 2m, 3m, 5m, aligned to the hour (the 6 PM session
+start is on an exact hour, so hour alignment matches TradingView's session
+alignment for all of these intervals).
+
+The 30-second rung is the last resort, used only when no higher timeframe
+produced a qualifying gap. Building it requires tick data.
 
 A three candle pattern `c1, c2, c3` on a given timeframe forms an FVG when:
 
@@ -91,7 +94,7 @@ Two selectable entry models, both implemented, switched by `entry_mode`:
 
 **`wait_highest_tf`** (default) - At each candle close, `H` is the highest
 timeframe currently holding a live qualifying FVG. Only a close on timeframe `H`
-can trigger entry. If a 1m FVG inverts while a live 5m FVG is waiting, the 1m
+can trigger entry. If a 30s FVG inverts while a live 5m FVG is waiting, the 30s
 signal is ignored and the engine waits for the 5m candle to close. If `H` never
 inverts before 8:30 PM, no trade is taken that day.
 
