@@ -154,6 +154,29 @@ If `max_entry_distance` is set, the entry must sit within that fraction of the
 range height beyond the swept level. An entry a few points past the level is
 normal and stays valid; one most of a range width past it is rejected.
 
+## 8c. Sweep depth and the chase guard
+
+Two separate ways the premise can be gone by the time an entry triggers.
+
+`max_sweep_depth_points` voids the session when price runs further than that many
+points past the level. ICT's distinction: past a certain depth the level was not
+raided, it was broken, and what follows is a run rather than a reversal. Observed
+range on real sessions: 45 and 94 points past the level both reversed and paid,
+153 points did not.
+
+`max_close_distance_past_gap` skips an inversion whose confirming close lands
+further past the gap's boundary than that fraction of the range height. A close
+37 points beyond a 3 point gap is one candle that already made the move, not a
+controlled reversal. Unlike the other filters this skips only that inversion and
+leaves the session open, since a later gap may still set up properly.
+
+## 8d. Break even
+
+`break_even_at_r` moves the stop to the entry price once the trade has run that
+multiple of its own risk. Off by default. It converts full losers into scratches
+on choppy sessions that oscillate inside the range, at the cost of being stopped
+out of trades that dip and then recover.
+
 ## 9. Take profit
 
 The opposite level, exactly. Long targets `range_high`, short targets
@@ -194,6 +217,9 @@ analysed and blocking every setup in between.
 | `flatten_before_next_session` | off | Close a position still open at the next session |
 | `max_trades_per_session` | 1 | Attempts per session, each re-armed by a deeper sweep |
 | `stop_buffer_ticks` | 0 | Ticks of padding beyond the sweep extreme |
+| `max_sweep_depth_points` | off | Points past the level before the setup is void |
+| `max_close_distance_past_gap` | off | How far past the gap a close may land, x range |
+| `break_even_at_r` | off | R multiple at which the stop moves to entry |
 | `enabled_weekdays` | Sun-Thu | Per-weekday on/off, keyed to the 6 PM session date |
 | `apply_slippage` | off | Ticks of adverse fill on entries and stops |
 | `slippage_ticks` | 1.0 | Used when slippage is on |
@@ -218,7 +244,7 @@ reports how often each stage of the setup fails:
 
 `weekday_disabled`, `no_range`, `no_window_data`, `no_sweep`, `sweep_no_fvg`,
 `no_inversion`, `both_levels_swept`, `size_zero`, `min_rr`, `entry_too_far`,
-`position_open`
+`sweep_too_deep`, `position_open`
 
 ## Reference trades
 

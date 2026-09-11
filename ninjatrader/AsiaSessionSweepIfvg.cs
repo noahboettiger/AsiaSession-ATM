@@ -91,6 +91,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private int			tradesTaken;
 		private DateTime	armedFromTime	= DateTime.MinValue;
 		private double		armExtreme;
+		private double		beEntry;
+		private double		beRisk;
+		private int			beDirection;
+		private bool		beDone;
 		private bool		sawQualifyingGap;
 		private bool		rangeAnnounced;
 
@@ -135,6 +139,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				MaxContracts				= 0;			// 0 means no cap
 				MaxTradesPerSession			= 1;
 				StopBufferTicks				= 0;			// ticks beyond the sweep extreme
+				MaxSweepDepthPoints			= 0;			// 0 disables the depth cap
+				MaxCloseDistancePastGap		= 0;			// 0 disables the chase guard
+				BreakEvenAtR				= 0;			// 0 disables break even
 				PointValueOverride			= 0;			// 0 uses the instrument's own
 
 				Use30Second					= true;
@@ -265,6 +272,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			Slot slot = SlotFor(BarsInProgress);
 			if (slot == null || CurrentBars[BarsInProgress] < 3)
 				return;
+
+			// Runs before the session window filter, because a trade can reach its
+			// break even trigger long after the last entry time has passed.
+			ManageBreakEven();
 
 			// NinjaTrader stamps a bar with its CLOSE time.
 			DateTime closeTime	= Times[BarsInProgress][0];
@@ -399,6 +410,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			tradesTaken			= 0;
 			armedFromTime		= DateTime.MinValue;
 			armExtreme			= 0;
+			beRisk				= 0;
+			beDone				= false;
 			sawQualifyingGap	= false;
 			rangeAnnounced		= false;
 			direction			= 0;
@@ -465,6 +478,35 @@ namespace NinjaTrader.NinjaScript.Strategies
 		/// move is the same sweep continuing, not a new one, so it does not re-arm.
 		/// Gaps are cleared so only ones built after the new sweep can qualify.
 		/// </summary>
+		/// <summary>
+		/// Pull the stop to the entry price once the trade has run the configured
+		/// multiple of its own risk. Turns a full loser into a scratch at the cost
+		/// of being stopped out of trades that would have recovered.
+		/// </summary>
+		private void ManageBreakEven()
+		{
+			if (BreakEvenAtR <= 0 || beDone || beRisk <= 0)
+				return;
+			if (Position.MarketPosition == MarketPosition.Flat)
+				return;
+
+			double trigger = beDirection == 1
+				? beEntry + BreakEvenAtR * beRisk
+				: beEntry - BreakEvenAtR * beRisk;
+
+			bool reached = beDirection == 1
+				? Highs[BarsInProgress][0] >= trigger
+				: Lows[BarsInProgress][0] <= trigger;
+			if (!reached)
+				return;
+
+			beDone = true;
+			double moved = Instrument.MasterInstrument.RoundToTickSize(beEntry);
+			SetStopLoss(SignalName, CalculationMode.Price, moved, false);
+			LogLine(string.Format("reached {0:F2}R, stop moved to break even at {1}",
+				BreakEvenAtR, Format(moved)));
+		}
+
 		private void ConsiderRearm(DateTime closeTime)
 		{
 			if (!entryTaken || sessionLocked || direction == 0)
@@ -560,6 +602,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 				sweepExtreme = sweepExtreme == 0 ? low : Math.Min(sweepExtreme, low);
 			else if (direction == -1)
 				sweepExtreme = sweepExtreme == 0 ? high : Math.Max(sweepExtreme, high);
+
+			// Past a certain depth the level was not swept, it was broken. ICT calls
+			// this a run rather than a raid, and the reversal premise is gone.
+			if (MaxSweepDepthPoints > 0 && direction != 0 && !entryTaken)
+			{
+				double level = direction == 1 ? rangeLow : rangeHigh;
+				double depth = direction == 1 ? level - sweepExtreme : sweepExtreme - level;
+				if (depth > MaxSweepDepthPoints)
+				{
+					LogLine(string.Format("price ran {0} points past the level, this is a breakdown",
+						Format(depth)));
+					FinishSession("sweep_too_deep");
+				}
+			}
 		}
 
 		#endregion
@@ -764,6 +820,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
+			// A close far beyond the gap it inverted is not a controlled reversal,
+			// it is one candle that already made the move. Skip it, but leave the
+			// session open: a later gap may still set up properly.
+			if (MaxCloseDistancePastGap > 0)
+			{
+				double boundary	= inversion.Gap.Boundary;
+				double past		= direction == 1 ? entry - boundary : boundary - entry;
+				double room		= (rangeHigh - rangeLow) * MaxCloseDistancePastGap;
+				if (past > room)
+				{
+					LogLine(string.Format(
+						"skipped {0} inversion, close sits {1} past the gap, room is {2}",
+						inversion.Slot.Label, Format(past), Format(room)));
+					return false;
+				}
+			}
+
 			if (entryTaken || Position.MarketPosition != MarketPosition.Flat)
 			{
 				FinishSession("position_open");
@@ -772,6 +845,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			stop	= Instrument.MasterInstrument.RoundToTickSize(stop);
 			target	= Instrument.MasterInstrument.RoundToTickSize(target);
+
+			beEntry		= entry;
+			beRisk		= risk;
+			beDirection	= direction;
+			beDone		= false;
 
 			entryTaken = true;
 			tradesTaken++;
@@ -951,6 +1029,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, 100)]
 		[Display(Name = "Stop buffer (ticks past the extreme)", Order = 5, GroupName = "1. Risk")]
 		public int StopBufferTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, double.MaxValue)]
+		[Display(Name = "Break even at R multiple (0 = off)", Order = 6, GroupName = "1. Risk")]
+		public double BreakEvenAtR { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, double.MaxValue)]
+		[Display(Name = "Max sweep depth past level, points (0 = off)", Order = 10,
+			GroupName = "2. Entry")]
+		public double MaxSweepDepthPoints { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, double.MaxValue)]
+		[Display(Name = "Max close distance past gap, x range (0 = off)", Order = 11,
+			GroupName = "2. Entry")]
+		public double MaxCloseDistancePastGap { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, int.MaxValue)]
