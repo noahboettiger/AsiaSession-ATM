@@ -86,6 +86,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private double		rangeLow;
 		private bool		rangeValid;
 		private bool		sessionDone;
+		private bool		entryTaken;
 		private bool		sawQualifyingGap;
 		private bool		rangeAnnounced;
 
@@ -269,14 +270,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!inRange && !inWindow && !afterHours)
 				return;
 
-			FlushPending(closeTime);
-
 			if (closeTime.Date != sessionDate)
 			{
 				FinalizeSession();
 				FlattenStalePosition();
 				StartSession(closeTime.Date);
 			}
+
+			// Hard stop on a second entry. Position.MarketPosition cannot be used
+			// for this: on bar close the entry order does not fill until the next
+			// bar, so the position still reads Flat while another signal evaluates.
+			if (entryTaken)
+				return;
+
+			// Deliberately after the session roll, so a timestamp left pending when
+			// a session ended cannot be evaluated against the next session's state.
+			FlushPending(closeTime);
 
 			if (inRange)
 			{
@@ -375,6 +384,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			rangeLow			= 0;
 			rangeValid			= false;
 			sessionDone			= false;
+			entryTaken			= false;
 			sawQualifyingGap	= false;
 			rangeAnnounced		= false;
 			direction			= 0;
@@ -665,7 +675,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				}
 			}
 
-			if (Position.MarketPosition != MarketPosition.Flat)
+			if (entryTaken || Position.MarketPosition != MarketPosition.Flat)
 			{
 				FinishSession("position_open");
 				return false;
@@ -674,8 +684,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 			stop	= Instrument.MasterInstrument.RoundToTickSize(stop);
 			target	= Instrument.MasterInstrument.RoundToTickSize(target);
 
+			entryTaken = true;
+			FinishSession("traded");
+
 			SetStopLoss(SignalName, CalculationMode.Price, stop, false);
 			SetProfitTarget(SignalName, CalculationMode.Price, target);
+
+			Print(string.Format("{0:yyyy-MM-dd} ENTRY SUBMITTED {1:HH:mm:ss} {2} {3} @ {4} stop {5}",
+				sessionDate, closeTime, direction == 1 ? "long" : "short", quantity,
+				Format(entry), Format(stop)));
 
 			if (direction == 1)
 				EnterLong(0, quantity, SignalName);
@@ -684,7 +701,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			ReportEntry(inversion, closeTime, entry, stop, target, quantity, risk, reward, pointValue);
 			DrawTrade(inversion, closeTime, entry, stop, target);
-			FinishSession("traded");
 			return true;
 		}
 
