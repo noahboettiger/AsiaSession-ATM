@@ -87,6 +87,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool		rangeValid;
 		private bool		sessionDone;
 		private bool		entryTaken;
+		private bool		sessionLocked;		// ended for a reason no re-arm can undo
+		private int			tradesTaken;
+		private DateTime	armedFromTime	= DateTime.MinValue;
+		private double		armExtreme;
 		private bool		sawQualifyingGap;
 		private bool		rangeAnnounced;
 
@@ -129,6 +133,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				MaxEntryDistanceFromLevel	= 0;			// 0 disables the proximity rule
 				FlattenBeforeNextSession	= false;
 				MaxContracts				= 0;			// 0 means no cap
+				MaxTradesPerSession			= 1;
 				PointValueOverride			= 0;			// 0 uses the instrument's own
 
 				Use30Second					= true;
@@ -277,10 +282,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				StartSession(closeTime.Date);
 			}
 
-			// Hard stop on a second entry. Position.MarketPosition cannot be used
-			// for this: on bar close the entry order does not fill until the next
-			// bar, so the position still reads Flat while another signal evaluates.
-			if (entryTaken)
+			if (sessionLocked)
 				return;
 
 			// Deliberately after the session roll, so a timestamp left pending when
@@ -301,9 +303,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 				return;
 			}
 
-			if (sessionDone)
-				return;
-
 			if (!rangeValid)
 			{
 				FinishSession("no_range");
@@ -318,8 +317,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 
 			DrawLevels(closeTime);
+
+			// Sweeps keep tracking after an entry, because a deeper one is what
+			// re-arms the session for a second attempt.
 			UpdateSweeps(BarsInProgress, closeTime);
-			if (sessionDone)
+			ConsiderRearm(closeTime);
+
+			// Hard stop on a second simultaneous entry. Position.MarketPosition
+			// cannot be used for this: on bar close the entry order does not fill
+			// until the next bar, so the position still reads Flat while another
+			// signal is being evaluated.
+			if (sessionDone || entryTaken)
 				return;
 
 			RegisterGap(slot, BarsInProgress, closeTime);
@@ -385,6 +393,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			rangeValid			= false;
 			sessionDone			= false;
 			entryTaken			= false;
+			sessionLocked		= false;
+			tradesTaken			= 0;
+			armedFromTime		= DateTime.MinValue;
+			armExtreme			= 0;
 			sawQualifyingGap	= false;
 			rangeAnnounced		= false;
 			direction			= 0;
@@ -423,6 +435,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (sessionDone)
 				return;
 			sessionDone = true;
+			if (reason != "traded")
+				sessionLocked = true;
 			if (LogDetail && reason != "traded")
 				Print(string.Format("{0:yyyy-MM-dd}  no trade: {1}", sessionDate, reason));
 		}
@@ -441,6 +455,43 @@ namespace NinjaTrader.NinjaScript.Strategies
 		{
 			if (sessionDate != DateTime.MinValue)
 				ExpireSession();
+		}
+
+		/// <summary>
+		/// Give the session a second attempt once the first trade is closed and
+		/// price has pushed beyond the extreme that defined its stop. A shallower
+		/// move is the same sweep continuing, not a new one, so it does not re-arm.
+		/// Gaps are cleared so only ones built after the new sweep can qualify.
+		/// </summary>
+		private void ConsiderRearm(DateTime closeTime)
+		{
+			if (!entryTaken || sessionLocked || direction == 0)
+				return;
+			if (tradesTaken >= MaxTradesPerSession)
+				return;
+			if (Position.MarketPosition != MarketPosition.Flat)
+				return;
+
+			bool deeper = direction == 1 ? sweepExtreme < armExtreme : sweepExtreme > armExtreme;
+			if (!deeper)
+				return;
+
+			entryTaken			= false;
+			sessionDone			= false;
+			sawQualifyingGap	= false;
+			armedFromTime		= closeTime;
+			pendingInversions.Clear();
+			pendingEvalTime		= DateTime.MinValue;
+			pendingCount		= 0;
+
+			foreach (Slot each in slots)
+			{
+				each.Bearish = null;
+				each.Bullish = null;
+			}
+
+			LogLine(string.Format("re-armed at {0:HH:mm:ss}, price swept on to {1}, attempt {2}",
+				closeTime, Format(sweepExtreme), tradesTaken + 1));
 		}
 
 		/// <summary>
@@ -477,6 +528,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (direction == 0)
 				{
 					direction = 1;
+					armedFromTime = closeTime;
 					LogLine(string.Format("sweep of the low at {0:HH:mm:ss}, {1} traded below {2}",
 						closeTime, Format(low), Format(rangeLow)));
 				}
@@ -488,6 +540,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				if (direction == 0)
 				{
 					direction = -1;
+					armedFromTime = closeTime;
 					LogLine(string.Format("sweep of the high at {0:HH:mm:ss}, {1} traded above {2}",
 						closeTime, Format(high), Format(rangeHigh)));
 				}
@@ -552,8 +605,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (gap == null || gap.Spent || direction == 0)
 				return false;
 
-			DateTime sweptAt = direction == 1 ? lowSweptAt : highSweptAt;
-			if (sweptAt == DateTime.MinValue || gap.FormedAt < sweptAt)
+			if (armedFromTime == DateTime.MinValue || gap.FormedAt < armedFromTime)
 				return false;
 
 			if (MaxBarsToInvert > 0)
@@ -685,6 +737,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			target	= Instrument.MasterInstrument.RoundToTickSize(target);
 
 			entryTaken = true;
+			tradesTaken++;
+			armExtreme = sweepExtreme;
 			FinishSession("traded");
 
 			SetStopLoss(SignalName, CalculationMode.Price, stop, false);
@@ -803,7 +857,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (!ShowDrawings)
 				return;
 
-			string stamp	= sessionDate.ToString("yyyyMMdd");
+			string stamp	= sessionDate.ToString("yyyyMMdd") + "_" + tradesTaken;
 			DateTime start	= inversion.Gap.FormedAt;
 			DateTime finish	= closeTime.AddMinutes(45);
 
@@ -865,6 +919,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[NinjaScriptProperty]
 		[Display(Name = "Entry model", Order = 1, GroupName = "2. Entry")]
 		public AsiaIfvgEntryMode EntryMode { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(1, 10)]
+		[Display(Name = "Max trades per session", Order = 9, GroupName = "2. Entry")]
+		public int MaxTradesPerSession { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Use 30 second", Order = 2, GroupName = "2. Entry")]

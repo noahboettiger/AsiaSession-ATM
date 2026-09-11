@@ -117,9 +117,19 @@ acts on it.
 ## 7. Entry
 
 Market order at the close of the confirming candle, in the direction from
-section 4. One trade per day maximum. Once an entry is taken, no further setups
-are evaluated that day regardless of outcome. Only one position may be open at a
-time across days.
+section 4. Only one position may be open at a time.
+
+`max_trades_per_session` caps attempts per session, defaulting to 1. Above 1, a
+session re-arms for another attempt only when both hold:
+
+1. The previous trade is closed.
+2. Price has pushed **beyond the extreme that defined the previous trade's
+   stop**. A shallower move is the same sweep continuing, not a new one.
+
+On re-arm the gap registry is cleared, so only gaps built after the new sweep can
+qualify. This is the mechanical form of a common sequence: the first inversion
+fails, price runs deeper liquidity, and the second inversion is the real move.
+Each attempt risks the full `risk_dollars`, so a cap of 2 doubles session risk.
 
 ## 8. Stop loss
 
@@ -179,6 +189,7 @@ analysed and blocking every setup in between.
 | `max_bars_to_invert` | off | Candles allowed between a gap forming and inverting |
 | `max_entry_distance` | off | How far past the level an entry may sit, x range height |
 | `flatten_before_next_session` | off | Close a position still open at the next session |
+| `max_trades_per_session` | 1 | Attempts per session, each re-armed by a deeper sweep |
 | `enabled_weekdays` | Sun-Thu | Per-weekday on/off, keyed to the 6 PM session date |
 | `apply_slippage` | off | Ticks of adverse fill on entries and stops |
 | `slippage_ticks` | 1.0 | Used when slippage is on |
