@@ -37,6 +37,7 @@ class StrategyConfig:
     min_rr: float | None = None
     max_bars_to_invert: int = 0  # 0 disables the freshness requirement
     max_entry_distance: float = 0.0  # as a fraction of range height, 0 disables
+    stop_buffer_ticks: int = 0  # ticks beyond the sweep extreme
     flatten_before_next_session: bool = False
     enabled_weekdays: frozenset[int] = DEFAULT_WEEKDAYS
 

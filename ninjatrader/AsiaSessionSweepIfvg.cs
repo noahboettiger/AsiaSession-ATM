@@ -134,6 +134,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 				FlattenBeforeNextSession	= false;
 				MaxContracts				= 0;			// 0 means no cap
 				MaxTradesPerSession			= 1;
+				StopBufferTicks				= 0;			// ticks beyond the sweep extreme
 				PointValueOverride			= 0;			// 0 uses the instrument's own
 
 				Use30Second					= true;
@@ -680,7 +681,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		private bool TryEnter(Inversion inversion, DateTime closeTime)
 		{
 			double entry	= inversion.Close;
-			double stop		= sweepExtreme;
+			// ICT: a stop parked exactly at the swept level often gets hunted again
+			// on the second test, so allow a buffer beyond the extreme.
+			double buffer	= StopBufferTicks * TickSize;
+			double stop		= direction == 1 ? sweepExtreme - buffer : sweepExtreme + buffer;
 			double target	= direction == 1 ? rangeHigh : rangeLow;
 			double risk		= Math.Abs(entry - stop);
 			double reward	= Math.Abs(target - entry);
@@ -900,6 +904,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(0, double.MaxValue)]
 		[Display(Name = "Minimum reward:risk (0 = off)", Order = 3, GroupName = "1. Risk")]
 		public double MinimumRewardRisk { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 100)]
+		[Display(Name = "Stop buffer (ticks past the extreme)", Order = 5, GroupName = "1. Risk")]
+		public int StopBufferTicks { get; set; }
 
 		[NinjaScriptProperty]
 		[Range(0, int.MaxValue)]

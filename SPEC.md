@@ -139,7 +139,10 @@ bars from the first sweep of the traded level through the entry bar inclusive.
 - Long: lowest low over that span
 - Short: highest high over that span
 
-No buffer or padding is added.
+`stop_buffer_ticks` adds padding beyond that extreme, defaulting to 0. ICT's
+guidance is that a stop parked exactly on the swept level often gets hunted on
+the second test, so a few ticks of room is worth testing. The buffer is applied
+before sizing, so contracts adjust for the wider risk.
 
 ## 8b. Entry proximity
 
@@ -190,6 +193,7 @@ analysed and blocking every setup in between.
 | `max_entry_distance` | off | How far past the level an entry may sit, x range height |
 | `flatten_before_next_session` | off | Close a position still open at the next session |
 | `max_trades_per_session` | 1 | Attempts per session, each re-armed by a deeper sweep |
+| `stop_buffer_ticks` | 0 | Ticks of padding beyond the sweep extreme |
 | `enabled_weekdays` | Sun-Thu | Per-weekday on/off, keyed to the 6 PM session date |
 | `apply_slippage` | off | Ticks of adverse fill on entries and stops |
 | `slippage_ticks` | 1.0 | Used when slippage is on |

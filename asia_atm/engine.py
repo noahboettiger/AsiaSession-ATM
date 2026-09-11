@@ -253,7 +253,9 @@ class StrategyEngine:
         assert s.range_high is not None and s.range_low is not None
 
         entry = htf.close
-        stop = s.extreme
+        # ICT: a stop sitting exactly on the swept extreme invites a second hunt.
+        buffer = self.cfg.stop_buffer_ticks * self.cfg.tick_size
+        stop = s.extreme - buffer if s.direction == LONG else s.extreme + buffer
         target = s.range_high if s.direction == LONG else s.range_low
         risk_points = abs(entry - stop)
         reward_points = abs(target - entry)
