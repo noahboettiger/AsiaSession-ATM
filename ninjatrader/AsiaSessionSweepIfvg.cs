@@ -155,6 +155,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 				ShowDrawings				= true;
 				LogDetail					= true;
+				DiagnosticMode				= false;
 				ExportCsvPath				= string.Empty;
 			}
 			else if (State == State.Configure)
@@ -532,6 +533,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					armedFromTime = closeTime;
 					LogLine(string.Format("sweep of the low at {0:HH:mm:ss}, {1} traded below {2}",
 						closeTime, Format(low), Format(rangeLow)));
+					DrawSweepMarker(closeTime, low);
 				}
 			}
 
@@ -544,6 +546,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 					armedFromTime = closeTime;
 					LogLine(string.Format("sweep of the high at {0:HH:mm:ss}, {1} traded above {2}",
 						closeTime, Format(high), Format(rangeHigh)));
+					DrawSweepMarker(closeTime, high);
 				}
 			}
 
@@ -568,10 +571,40 @@ namespace NinjaTrader.NinjaScript.Strategies
 			double c1High = Highs[bip][2], c1Low = Lows[bip][2];
 			double c3High = Highs[bip][0], c3Low = Lows[bip][0];
 
+			Gap formed = null;
 			if (c3High < c1Low)
-				slot.Bearish = new Gap { Bearish = true, Bottom = c3High, Top = c1Low, FormedAt = closeTime };
+				formed = slot.Bearish = new Gap { Bearish = true, Bottom = c3High, Top = c1Low, FormedAt = closeTime };
 			else if (c3Low > c1High)
-				slot.Bullish = new Gap { Bearish = false, Bottom = c1High, Top = c3Low, FormedAt = closeTime };
+				formed = slot.Bullish = new Gap { Bearish = false, Bottom = c1High, Top = c3Low, FormedAt = closeTime };
+
+			if (formed != null && DiagnosticMode)
+			{
+				LogLine(string.Format("{0:HH:mm:ss} {1} {2} gap formed {3} to {4}",
+					closeTime, slot.Label, formed.Bearish ? "bearish" : "bullish",
+					Format(formed.Bottom), Format(formed.Top)));
+				DrawDiagnosticGap(slot, formed, closeTime);
+			}
+		}
+
+		/// <summary>
+		/// Shade every gap the engine registers, labelled by timeframe, so its
+		/// reading of the chart can be checked against yours candle by candle.
+		/// Bearish gaps draw warm, bullish cool. Off by default: on a multi-year
+		/// run this produces thousands of objects.
+		/// </summary>
+		private void DrawDiagnosticGap(Slot slot, Gap gap, DateTime closeTime)
+		{
+			if (!ShowDrawings)
+				return;
+
+			string tag = "dg" + slot.Label + closeTime.Ticks;
+			Draw.Rectangle(this, tag, false, closeTime, gap.Bottom,
+				closeTime.AddSeconds(slot.Seconds * 8), gap.Top,
+				Brushes.Transparent, gap.Bearish ? Brushes.OrangeRed : Brushes.DodgerBlue, 12);
+			Draw.Text(this, tag + "L", false, slot.Label, closeTime, gap.Top, 6,
+				gap.Bearish ? Brushes.OrangeRed : Brushes.DodgerBlue,
+				new SimpleFont("Arial", 9), System.Windows.TextAlignment.Left,
+				Brushes.Transparent, Brushes.Transparent, 0);
 		}
 
 		private void CollectInversion(Slot slot, int bip, DateTime closeTime)
@@ -841,6 +874,15 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		#region Drawing
 
+		private void DrawSweepMarker(DateTime closeTime, double price)
+		{
+			if (!ShowDrawings || !DiagnosticMode)
+				return;
+			Draw.Text(this, "sweep" + closeTime.Ticks, false, "SWEEP", closeTime, price, -14,
+				Brushes.Yellow, new SimpleFont("Arial", 10), System.Windows.TextAlignment.Center,
+				Brushes.Transparent, Brushes.Transparent, 0);
+		}
+
 		private void DrawLevels(DateTime closeTime)
 		{
 			if (!ShowDrawings || !rangeValid)
@@ -996,6 +1038,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[NinjaScriptProperty]
 		[Display(Name = "Log to output window", Order = 2, GroupName = "5. Output")]
 		public bool LogDetail { get; set; }
+
+		// Verification aid. Never leave this on for a multi-year run.
+		[NinjaScriptProperty]
+		[Display(Name = "Diagnostic mode (draw every gap and sweep)", Order = 4,
+			GroupName = "5. Output")]
+		public bool DiagnosticMode { get; set; }
 
 		[NinjaScriptProperty]
 		[Display(Name = "Export CSV path (blank = off)", Order = 3, GroupName = "5. Output")]
